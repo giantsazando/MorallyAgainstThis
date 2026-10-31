@@ -463,7 +463,6 @@
 
   function closeDetail() {
     var dlg = $('detail');
-    if (!$('suggestions').hidden) renderSuggestions();
     if (typeof dlg.close === 'function') dlg.close();
     else dlg.removeAttribute('open');
   }
@@ -854,6 +853,11 @@
     $('import-file').addEventListener('change', function (e) {
       if (e.target.files && e.target.files[0]) importLog(e.target.files[0]);
       e.target.value = '';
+    });
+
+    // Fires for the Close button, Escape and backdrop clicks alike.
+    $('detail').addEventListener('close', function () {
+      if (!$('suggestions').hidden) renderSuggestions();
     });
 
     $('detail').addEventListener('click', function (e) {
