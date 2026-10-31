@@ -259,12 +259,12 @@
 
     return el('article', { class: 'card', 'data-id': g.id }, [
       el('button', { type: 'button', class: 'cover-btn', 'aria-label': 'Details for ' + g.title, onclick: open }, [
-        el('div', { class: 'cover', 'aria-hidden': 'true' }),
+        el('img', { class: 'cover', src: window.PixelCover.url(g), alt: '', width: '40', height: '25', loading: 'lazy' }),
         g.upcoming ? el('span', { class: 'cover-flag', text: 'UPCOMING' }) : null
       ]),
       el('div', { class: 'card-body' }, [
         el('h2', { class: 'card-title' }, [el('button', { type: 'button', onclick: open, text: g.title })]),
-        el('div', { class: 'meta', text: yearLabel(g) + ' — ' + platforms }),
+        el('div', { class: 'meta', text: platforms ? yearLabel(g) + ' — ' + platforms : yearLabel(g) }),
         el('div', { class: 'badges' }, badges),
         el('div', { class: 'card-controls' }, [
           statusSelect(g, 'status-select'),
@@ -427,6 +427,7 @@
     addFact(facts, 'Platforms', g.platforms.join(', '));
     addFact(facts, 'In English', g.released_in_english ? 'Yes' : 'No');
 
+    body.appendChild(el('img', { class: 'detail-cover', src: window.PixelCover.url(g, 80), alt: '', width: '80', height: '25' }));
     body.appendChild(el('div', { class: 'detail-head' }, [
       el('div', null, [
         el('h2', { id: 'detail-title', text: g.title }),

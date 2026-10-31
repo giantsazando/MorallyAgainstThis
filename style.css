@@ -240,6 +240,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .cover {
   display: block;
   width: 100%;
+  height: auto;
   aspect-ratio: 8 / 5;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
@@ -318,7 +319,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .detail::backdrop { background: rgba(10, 8, 14, .6); }
 .detail-body { padding: 0 0 18px; }
-.detail-cover { width: 100%; aspect-ratio: 8 / 3; object-fit: cover; image-rendering: pixelated; display: block; }
+.detail-cover { width: 100%; height: auto; aspect-ratio: 80 / 25; image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
 .detail-head { padding: 14px 20px 0; display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .detail-head h2 { margin: 0; font-size: 1.35rem; line-height: 1.25; }
 .detail-head .jp { color: var(--muted); margin: 2px 0 0; font-size: .9rem; }
