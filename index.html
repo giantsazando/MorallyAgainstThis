@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RPG Quest Log</title>
+  <meta name="description" content="Track the Enix and Square Enix RPGs you want to play, are playing, and have finished.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div class="brand">
+        <h1>RPG Quest Log</h1>
+        <p class="tagline">Enix &amp; Square Enix role-playing games, 1983 to today</p>
+      </div>
+      <div class="header-actions">
+        <button type="button" id="suggest-btn" class="btn">What next?</button>
+        <button type="button" id="export-btn" class="btn ghost">Export</button>
+        <button type="button" id="import-btn" class="btn ghost">Import</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+        <button type="button" id="theme-toggle" class="btn ghost" aria-label="Toggle colour theme">Theme</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="stats" class="stats" aria-label="Your progress"></section>
+
+    <section id="suggestions" class="suggestions" aria-labelledby="suggest-title" hidden></section>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <section class="toolbar" aria-label="Filters">
+      <div class="tabs" role="tablist" id="status-tabs"></div>
+
+      <div class="filters">
+        <label class="field grow">
+          <span class="label">Search</span>
+          <input type="search" id="f-search" placeholder="Title, Japanese title, series…" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="label">Series</span>
+          <select id="f-series"><option value="">All series</option></select>
+        </label>
+        <label class="field">
+          <span class="label">Platform</span>
+          <select id="f-platform"><option value="">All platforms</option></select>
+        </label>
+        <label class="field">
+          <span class="label">Publisher</span>
+          <select id="f-publisher">
+            <option value="">Any publisher</option>
+            <option value="Enix">Enix</option>
+            <option value="Square">Square</option>
+            <option value="Quest">Quest</option>
+            <option value="Square Enix">Square Enix</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="label">Type</span>
+          <select id="f-type">
+            <option value="">RPGs &amp; hybrids</option>
+            <option value="yes">Core RPGs</option>
+            <option value="hybrid">RPG hybrids</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="label">Sort</span>
+          <select id="f-sort">
+            <option value="year-asc">Oldest first</option>
+            <option value="year-desc">Newest first</option>
+            <option value="title">Title A–Z</option>
+            <option value="rating">My rating</option>
+            <option value="updated">Recently updated</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="filter-row">
+        <label class="check"><input type="checkbox" id="f-english"> Released in English</label>
+        <label class="check"><input type="checkbox" id="f-hide-upcoming"> Hide upcoming</label>
+        <span class="result-count" id="result-count" aria-live="polite"></span>
+        <button type="button" id="f-reset" class="btn ghost small">Reset filters</button>
+      </div>
+    </section>
+
+    <section id="grid" class="grid" aria-label="Games"></section>
+    <p id="empty" class="empty" hidden>No games match these filters.</p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p id="data-note"></p>
+      <p>Cover boxes are original pixel-art placeholders, not real box art.</p>
+    </div>
+  </footer>
+
+  <dialog id="detail" class="detail" aria-labelledby="detail-title">
+    <div class="detail-body" id="detail-body"></div>
+  </dialog>
+
+  <script src="art.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
