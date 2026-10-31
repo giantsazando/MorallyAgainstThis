@@ -3,6 +3,16 @@
   'use strict';
 
   var DATA_URL = 'enix_square_enix_rpgs.json';
+  var STORE_KEY = 'rpgql-log-v1';
+
+  var STATUSES = [
+    { id: 'want', label: 'Want to play' },
+    { id: 'playing', label: 'Playing' },
+    { id: 'finished', label: 'Finished' },
+    { id: 'dropped', label: 'Dropped' }
+  ];
+  var STATUS_LABEL = { '': 'Not tracked' };
+  STATUSES.forEach(function (st) { STATUS_LABEL[st.id] = st.label; });
 
   // Short names for card meta lines.
   var PLATFORM_SHORT = {
@@ -46,6 +56,8 @@
     games: [],
     byId: {},
     meta: null,
+    log: {},          // id -> { status, rating, platform, started, finished, hours, notes, updated }
+    tab: 'all',
     filters: defaultFilters()
   };
 
@@ -106,6 +118,48 @@
     return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   }
 
+  // ---------- personal log (localStorage) ----------
+  function loadLog() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && parsed.games && typeof parsed.games === 'object') return parsed.games;
+    } catch (e) { /* unavailable or corrupt: start empty */ }
+    return {};
+  }
+
+  function saveLog() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ version: 1, games: state.log }));
+    } catch (e) { /* private mode or quota: keep working in memory */ }
+  }
+
+  function entry(id) { return state.log[id] || {}; }
+
+  // Merge changes into a game's log entry; drop entries that hold nothing.
+  function updateEntry(id, changes) {
+    var g = state.byId[id];
+    var next = Object.assign({}, state.log[id], changes);
+    if (g && g.upcoming) {
+      // Upcoming games can only be wish-listed.
+      if (next.status && next.status !== 'want') next.status = 'want';
+      delete next.rating;
+    }
+    Object.keys(next).forEach(function (k) {
+      if (next[k] === '' || next[k] == null || next[k] === 0) delete next[k];
+    });
+    delete next.updated;
+    if (Object.keys(next).length) {
+      next.updated = new Date().toISOString();
+      state.log[id] = next;
+    } else {
+      delete state.log[id];
+    }
+    saveLog();
+  }
+
+  function statusOf(g) { return entry(g.id).status || ''; }
+
   // ---------- data ----------
   function prepare(data) {
     state.meta = data.meta;
@@ -140,6 +194,7 @@
   }
 
   function matches(g, f) {
+    if (state.tab !== 'all' && statusOf(g) !== (state.tab === 'untracked' ? '' : state.tab)) return false;
     if (f.search && g._search.indexOf(fold(f.search)) === -1) return false;
     if (f.series && g.series !== f.series) return false;
     if (f.platform && g.platforms.indexOf(f.platform) === -1) return false;
@@ -159,7 +214,15 @@
     var cmp = {
       'year-asc': byYear,
       'year-desc': function (a, b) { return byYear(b, a); },
-      'title': function (a, b) { return a.title.localeCompare(b.title); }
+      'title': function (a, b) { return a.title.localeCompare(b.title); },
+      'rating': function (a, b) {
+        return (entry(b.id).rating || 0) - (entry(a.id).rating || 0) || byYear(a, b);
+      },
+      'updated': function (a, b) {
+        var ua = entry(a.id).updated || '';
+        var ub = entry(b.id).updated || '';
+        return ub < ua ? -1 : ub > ua ? 1 : byYear(a, b);
+      }
     }[sort] || byYear;
     return list.slice().sort(cmp);
   }
@@ -171,6 +234,8 @@
 
   // ---------- rendering ----------
   function render() {
+    renderStats();
+    renderTabs();
     var list = visibleGames();
     var grid = $('grid');
     grid.textContent = '';
@@ -200,9 +265,148 @@
       el('div', { class: 'card-body' }, [
         el('h2', { class: 'card-title' }, [el('button', { type: 'button', onclick: open, text: g.title })]),
         el('div', { class: 'meta', text: yearLabel(g) + ' — ' + platforms }),
-        el('div', { class: 'badges' }, badges)
+        el('div', { class: 'badges' }, badges),
+        el('div', { class: 'card-controls' }, [
+          statusSelect(g, 'status-select'),
+          g.upcoming ? el('span', { class: 'meta', text: 'Not out yet' }) : stars(g)
+        ])
       ])
     ]);
+  }
+
+  function statusSelect(g, cls) {
+    var current = statusOf(g);
+    var options = g.upcoming ? [{ id: 'want', label: 'Want to play' }] : STATUSES;
+    var select = el('select', {
+      class: cls,
+      'data-status': current,
+      'aria-label': 'Status for ' + g.title
+    }, [el('option', { value: '', text: 'Not tracked' })].concat(options.map(function (st) {
+      return el('option', { value: st.id, text: st.label });
+    })));
+    select.value = current;
+    select.addEventListener('change', function () {
+      var changes = { status: select.value };
+      var e = entry(g.id);
+      var today = new Date().toISOString().slice(0, 10);
+      if (select.value === 'playing' && !e.started) changes.started = today;
+      if (select.value === 'finished' && !e.finished) changes.finished = today;
+      updateEntry(g.id, changes);
+      select.setAttribute('data-status', select.value);
+      refreshAfterChange(g.id);
+    });
+    return select;
+  }
+
+  function stars(g) {
+    var rating = entry(g.id).rating || 0;
+    var wrap = el('div', { class: 'stars', role: 'radiogroup', 'aria-label': 'Rate ' + g.title });
+    for (var i = 1; i <= 5; i++) {
+      (function (n) {
+        wrap.appendChild(el('button', {
+          type: 'button',
+          class: 'star' + (n <= rating ? ' on' : ''),
+          role: 'radio',
+          'aria-checked': n === rating ? 'true' : 'false',
+          'aria-label': n + ' star' + (n > 1 ? 's' : ''),
+          title: n === rating ? 'Clear rating' : n + ' / 5',
+          text: '★',
+          onclick: function () {
+            // Clicking the current rating again clears it.
+            updateEntry(g.id, { rating: n === (entry(g.id).rating || 0) ? 0 : n });
+            refreshAfterChange(g.id);
+          }
+        }));
+      })(i);
+    }
+    return wrap;
+  }
+
+  // Re-render without losing the user's place in the grid or focus in a control.
+  var FOCUSABLE = 'button, select, input, textarea';
+  function focusPath() {
+    var a = document.activeElement;
+    if (!a || !a.closest) return null;
+    var panel = a.closest('#log-panel');
+    if (panel) return { panel: true, index: [].indexOf.call(panel.querySelectorAll(FOCUSABLE), a) };
+    var card = a.closest('.card');
+    if (card) return { id: card.getAttribute('data-id'), index: [].indexOf.call(card.querySelectorAll(FOCUSABLE), a) };
+    return null;
+  }
+
+  function restoreFocus(path) {
+    if (!path || path.index < 0) return;
+    var host = path.panel ? $('log-panel') :
+      document.querySelector('.card[data-id="' + CSS.escape(path.id) + '"]');
+    var target = host && host.querySelectorAll(FOCUSABLE)[path.index];
+    if (target) target.focus({ preventScroll: true });
+  }
+
+  function refreshAfterChange(id) {
+    var dlg = $('detail');
+    var scrollY = window.scrollY;
+    var path = focusPath();
+    render();
+    window.scrollTo(0, scrollY);
+    if (dlg.open && dlg.getAttribute('data-id') === id) renderLogPanel(state.byId[id]);
+    restoreFocus(path);
+  }
+
+  // ---------- stats & tabs ----------
+  function counts() {
+    var c = { all: state.games.length, untracked: 0, want: 0, playing: 0, finished: 0, dropped: 0 };
+    state.games.forEach(function (g) { c[statusOf(g) || 'untracked']++; });
+    return c;
+  }
+
+  function renderTabs() {
+    var c = counts();
+    var tabs = [{ id: 'all', label: 'All' }].concat(STATUSES, [{ id: 'untracked', label: 'Not tracked' }]);
+    var host = $('status-tabs');
+    host.textContent = '';
+    tabs.forEach(function (t) {
+      host.appendChild(el('button', {
+        type: 'button',
+        class: 'tab',
+        role: 'tab',
+        'aria-selected': state.tab === t.id ? 'true' : 'false',
+        onclick: function () { state.tab = t.id; render(); }
+      }, [t.label, el('span', { class: 'count', text: String(c[t.id]) })]));
+    });
+  }
+
+  function renderStats() {
+    var c = counts();
+    var released = state.games.filter(function (g) { return !g.upcoming; }).length;
+    var ratings = Object.keys(state.log).map(function (id) { return state.log[id].rating; }).filter(Boolean);
+    var avg = ratings.length ? (ratings.reduce(function (a, b) { return a + b; }, 0) / ratings.length).toFixed(1) : '—';
+    var hours = Object.keys(state.log).reduce(function (sum, id) { return sum + (Number(state.log[id].hours) || 0); }, 0);
+    var pct = released ? Math.round(c.finished / released * 100) : 0;
+
+    var host = $('stats');
+    host.textContent = '';
+    var stat = function (num, lbl, color) {
+      return el('div', { class: 'stat' }, [
+        el('div', { class: 'num', text: String(num), style: color ? 'color: var(--' + color + ')' : null }),
+        el('div', { class: 'lbl', text: lbl })
+      ]);
+    };
+    host.appendChild(stat(c.finished, 'Finished', 'finished'));
+    host.appendChild(stat(c.playing, 'Playing', 'playing'));
+    host.appendChild(stat(c.want, 'Want to play', 'want'));
+    host.appendChild(stat(c.dropped, 'Dropped', 'dropped'));
+    host.appendChild(stat(avg, 'Average rating'));
+    host.appendChild(stat(hours ? Math.round(hours) : 0, 'Hours logged'));
+
+    var bar = el('div', { class: 'progress', role: 'img',
+      'aria-label': c.finished + ' finished, ' + c.playing + ' playing, ' + c.dropped + ' dropped of ' + released + ' released games' });
+    ['finished', 'playing', 'dropped'].forEach(function (k) {
+      if (c[k]) bar.appendChild(el('span', { style: 'width:' + (c[k] / released * 100) + '%; background: var(--' + k + ')' }));
+    });
+    host.appendChild(el('div', { class: 'stat progress-stat' }, [
+      el('div', { class: 'lbl', text: 'Completion: ' + c.finished + ' of ' + released + ' released games finished (' + pct + '%)' }),
+      bar
+    ]));
   }
 
   // ---------- detail dialog ----------
@@ -231,6 +435,8 @@
       el('button', { type: 'button', class: 'btn ghost small close-btn', onclick: closeDetail, text: 'Close' })
     ]));
 
+    body.appendChild(el('div', { class: 'detail-section log-panel', id: 'log-panel' }));
+
     body.appendChild(el('div', { class: 'detail-section' }, [
       el('h3', { text: 'About' }),
       el('p', { text: g.description }),
@@ -242,7 +448,10 @@
       renderSources(g)
     ]));
 
+    renderLogPanel(g);
+
     var dlg = $('detail');
+    dlg.setAttribute('data-id', g.id);
     if (typeof dlg.showModal === 'function') {
       if (!dlg.open) dlg.showModal();
     } else {
@@ -255,6 +464,76 @@
     var dlg = $('detail');
     if (typeof dlg.close === 'function') dlg.close();
     else dlg.removeAttribute('open');
+  }
+
+  // "My log" form inside the details dialog.
+  function renderLogPanel(g) {
+    var host = $('log-panel');
+    if (!host) return;
+    host.textContent = '';
+    var e = entry(g.id);
+    host.appendChild(el('h3', { text: 'My log' }));
+
+    if (g.upcoming) {
+      host.appendChild(el('div', { class: 'log-grid' }, [
+        el('label', { class: 'field' }, [el('span', { class: 'label', text: 'Status' }), statusSelect(g, 'status-select')]),
+        notesField(g, e)
+      ]));
+      host.appendChild(el('p', { class: 'meta', text: 'This game is not out yet, so it can be wish-listed but not rated.' }));
+      return;
+    }
+
+    var platform = el('select', { 'aria-label': 'Platform played' },
+      [el('option', { value: '', text: '—' })].concat(g.platforms.map(function (p) {
+        return el('option', { value: p, text: p });
+      })));
+    platform.value = e.platform || '';
+    platform.addEventListener('change', function () { updateEntry(g.id, { platform: platform.value }); refreshAfterChange(g.id); });
+
+    var dateInput = function (key) {
+      var input = el('input', { type: 'date', value: e[key] || '' });
+      input.addEventListener('change', function () {
+        var c = {};
+        c[key] = input.value;
+        updateEntry(g.id, c);
+        refreshAfterChange(g.id);
+      });
+      return input;
+    };
+
+    var hours = el('input', { type: 'number', min: '0', step: '0.5', inputmode: 'decimal', value: e.hours || '' });
+    hours.addEventListener('change', function () {
+      var v = parseFloat(hours.value);
+      updateEntry(g.id, { hours: isFinite(v) && v > 0 ? v : 0 });
+      refreshAfterChange(g.id);
+    });
+
+    host.appendChild(el('div', { class: 'log-grid' }, [
+      el('label', { class: 'field' }, [el('span', { class: 'label', text: 'Status' }), statusSelect(g, 'status-select')]),
+      el('div', { class: 'field' }, [el('span', { class: 'label', text: 'Rating' }), stars(g)]),
+      el('label', { class: 'field' }, [el('span', { class: 'label', text: 'Platform played' }), platform]),
+      el('label', { class: 'field' }, [el('span', { class: 'label', text: 'Hours' }), hours]),
+      el('label', { class: 'field' }, [el('span', { class: 'label', text: 'Started' }), dateInput('started')]),
+      el('label', { class: 'field' }, [el('span', { class: 'label', text: 'Finished' }), dateInput('finished')]),
+      notesField(g, e)
+    ]));
+  }
+
+  function notesField(g, e) {
+    var notes = el('textarea', { rows: '3', placeholder: 'Party, progress, thoughts…' });
+    notes.value = e.notes || '';
+    // Save while typing, without re-rendering (keeps the cursor in place).
+    var timer;
+    notes.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () { updateEntry(g.id, { notes: notes.value }); }, 300);
+    });
+    notes.addEventListener('change', function () {
+      clearTimeout(timer);
+      updateEntry(g.id, { notes: notes.value });
+      refreshAfterChange(g.id);
+    });
+    return el('label', { class: 'field wide' }, [el('span', { class: 'label', text: 'Notes' }), notes]);
   }
 
   function addFact(dl, label, value) {
@@ -401,6 +680,7 @@
       })
       .then(function (data) {
         prepare(data);
+        state.log = loadLog();
         buildFilterOptions();
         bindFilters();
         var r = state.meta.retrieved || {};
