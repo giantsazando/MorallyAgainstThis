@@ -463,6 +463,7 @@
 
   function closeDetail() {
     var dlg = $('detail');
+    if (!$('suggestions').hidden) renderSuggestions();
     if (typeof dlg.close === 'function') dlg.close();
     else dlg.removeAttribute('open');
   }
@@ -597,6 +598,232 @@
     return p;
   }
 
+  // ---------- recommendations ----------
+  // Scores released games you haven't started, using what you've rated,
+  // finished or dropped. Returns [{ game, score, reasons }] best first.
+  function recommend() {
+    var seriesTaste = {};
+    var genreTaste = {};
+    var platformsUsed = {};
+    var hasTaste = false;
+
+    state.games.forEach(function (g) {
+      var e = entry(g.id);
+      if (!e.status || e.status === 'want') return;
+      var w;
+      if (e.rating) w = (e.rating - 3) / 2;          // 1★ = -1 … 5★ = +1
+      else if (e.status === 'finished') w = 0.5;
+      else if (e.status === 'playing') w = 0.3;
+      else w = -0.6;                                 // dropped, unrated
+      if (e.status === 'dropped' && w > 0) w = 0;
+      hasTaste = true;
+      if (g.series) seriesTaste[g.series] = (seriesTaste[g.series] || 0) + w;
+      (g.genres || []).forEach(function (x) { genreTaste[x] = (genreTaste[x] || 0) + w; });
+      if (e.platform) platformsUsed[e.platform] = true;
+    });
+
+    // Earliest released game per series that you haven't touched yet.
+    var nextInSeries = {};
+    sortGames(state.games, 'year-asc').forEach(function (g) {
+      if (!g.series || g.upcoming) return;
+      var st = statusOf(g);
+      if (!nextInSeries[g.series] && (!st || st === 'want')) nextInSeries[g.series] = g.id;
+    });
+
+    var seriesSize = {};
+    state.games.forEach(function (g) { if (g.series) seriesSize[g.series] = (seriesSize[g.series] || 0) + 1; });
+
+    var picks = [];
+    state.games.forEach(function (g) {
+      var st = statusOf(g);
+      if (g.upcoming || (st && st !== 'want')) return;
+      var score = 0;
+      var reasons = [];
+
+      if (g.series && seriesTaste[g.series]) {
+        var s = seriesTaste[g.series];
+        score += s * 3;
+        if (s > 0) reasons.push('You enjoyed other ' + g.series + ' games');
+        else reasons.push('Other ' + g.series + ' games didn’t land for you');
+      }
+      var genreScore = 0;
+      var liked = [];
+      (g.genres || []).forEach(function (x) {
+        if (genreTaste[x]) {
+          genreScore += genreTaste[x];
+          if (genreTaste[x] > 0) liked.push(x);
+        }
+      });
+      if (genreScore) {
+        score += Math.max(-2, Math.min(2.5, genreScore * 0.6));
+        if (liked.length) reasons.push('Matches genres you like: ' + liked.join(', '));
+      }
+      if (g.platforms.some(function (p) { return platformsUsed[p]; })) {
+        score += 0.5;
+        reasons.push('On a platform you play on');
+      }
+      if (st === 'want') {
+        score += 1.5;
+        reasons.push('On your want-to-play list');
+      }
+      if (g.series && nextInSeries[g.series] === g.id) {
+        score += hasTaste && seriesTaste[g.series] > 0 ? 1 : 0.4;
+        if (!hasTaste || !seriesTaste[g.series]) {
+          if ((seriesSize[g.series] || 0) >= 3) {
+            score += 1;
+            reasons.push('A good place to start the ' + g.series + ' series');
+          }
+        } else if (seriesTaste[g.series] > 0) {
+          reasons.push('Next ' + g.series + ' game you haven’t played');
+        }
+      }
+      if (g.released_in_english) score += 0.6;
+      else reasons.push('Japan-only release');
+      if (g.rpg === 'hybrid') score -= 0.2;
+      // Small nudge for newer re-releases being easy to find.
+      if (g.platforms.some(function (p) { return /Switch|PlayStation [45]|Windows|Xbox Series/.test(p); })) score += 0.3;
+
+      if (!reasons.length) reasons.push(g.released_in_english ? 'Something new to try' : 'A deep cut');
+      picks.push({ game: g, score: score, reasons: reasons });
+    });
+
+    picks.sort(function (a, b) { return b.score - a.score || a.game._order - b.game._order; });
+    return { picks: picks, hasTaste: hasTaste };
+  }
+
+  var suggestOffset = 0;
+  var SUGGEST_COUNT = 6;
+
+  function renderSuggestions() {
+    var host = $('suggestions');
+    var result = recommend();
+    var list = result.picks;
+    if (suggestOffset >= list.length) suggestOffset = 0;
+    var shown = list.slice(suggestOffset, suggestOffset + SUGGEST_COUNT);
+
+    host.textContent = '';
+    host.appendChild(el('div', { class: 'suggest-head' }, [
+      el('div', null, [
+        el('h2', { id: 'suggest-title', text: 'What should I play next?' }),
+        el('p', { class: 'meta', text: result.hasTaste ?
+          'Based on the games you have rated, finished or dropped.' :
+          'Rate or finish a few games to get picks tailored to you. Until then, here are good starting points.' })
+      ]),
+      el('div', { class: 'suggest-actions' }, [
+        list.length > SUGGEST_COUNT ? el('button', {
+          type: 'button', class: 'btn ghost small', text: 'More picks',
+          onclick: function () { suggestOffset += SUGGEST_COUNT; renderSuggestions(); }
+        }) : null,
+        el('button', { type: 'button', class: 'btn ghost small', text: 'Hide', onclick: function () { host.hidden = true; } })
+      ])
+    ]));
+
+    if (!shown.length) {
+      host.appendChild(el('p', { class: 'meta', text: 'You have tracked every released game. Impressive!' }));
+      return;
+    }
+
+    host.appendChild(el('ol', { class: 'suggest-list', start: String(suggestOffset + 1) }, shown.map(function (p) {
+      var g = p.game;
+      var wanted = statusOf(g) === 'want';
+      return el('li', { class: 'suggest-item' }, [
+        el('button', { type: 'button', class: 'suggest-cover', 'aria-label': 'Details for ' + g.title, onclick: function () { openDetail(g.id); } }, [
+          el('img', { src: window.PixelCover.url(g), alt: '', width: '40', height: '25' })
+        ]),
+        el('div', { class: 'suggest-text' }, [
+          el('strong', { text: g.title }),
+          el('span', { class: 'meta', text: yearLabel(g) + (g.series ? ' · ' + g.series : '') }),
+          el('ul', { class: 'reasons' }, p.reasons.slice(0, 3).map(function (r) { return el('li', { text: r }); })),
+          el('div', null, [
+            wanted ? el('span', { class: 'meta', text: '✓ On your list' }) :
+              el('button', {
+                type: 'button', class: 'btn ghost small', text: '+ Want to play',
+                onclick: function () {
+                  updateEntry(g.id, { status: 'want' });
+                  refreshAfterChange(g.id);
+                  renderSuggestions();
+                }
+              })
+          ])
+        ])
+      ]);
+    })));
+  }
+
+  function toggleSuggestions() {
+    var host = $('suggestions');
+    if (host.hidden) {
+      suggestOffset = 0;
+      renderSuggestions();
+      host.hidden = false;
+      host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      host.hidden = true;
+    }
+  }
+
+  // ---------- backup ----------
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(function () { t.hidden = true; }, 3500);
+  }
+
+  function exportLog() {
+    var payload = {
+      app: 'rpg-quest-log',
+      version: 1,
+      exported: new Date().toISOString(),
+      games: state.log
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    var a = el('a', { href: URL.createObjectURL(blob), download: 'rpg-quest-log-' + new Date().toISOString().slice(0, 10) + '.json' });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    toast('Exported ' + Object.keys(state.log).length + ' tracked games.');
+  }
+
+  var ALLOWED_FIELDS = ['status', 'rating', 'platform', 'started', 'finished', 'hours', 'notes', 'updated'];
+
+  function importLog(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data;
+      try { data = JSON.parse(reader.result); } catch (e) { toast('That file is not valid JSON.'); return; }
+      var games = data && data.games;
+      if (!games || typeof games !== 'object' || Array.isArray(games)) {
+        toast('That file is not an RPG Quest Log export.');
+        return;
+      }
+      var clean = {};
+      var skipped = 0;
+      Object.keys(games).forEach(function (id) {
+        var src = games[id];
+        if (!state.byId[id] || !src || typeof src !== 'object') { skipped++; return; }
+        var e = {};
+        ALLOWED_FIELDS.forEach(function (k) { if (src[k] != null && src[k] !== '') e[k] = src[k]; });
+        if (e.status && !STATUS_LABEL[e.status]) delete e.status;
+        if (e.rating != null) {
+          e.rating = Math.round(Number(e.rating));
+          if (!(e.rating >= 1 && e.rating <= 5)) delete e.rating;
+        }
+        if (Object.keys(e).length) clean[id] = e;
+      });
+      var n = Object.keys(clean).length;
+      var existing = Object.keys(state.log).length;
+      if (existing && !window.confirm('Replace your ' + existing + ' tracked games with the ' + n + ' in this file?')) return;
+      state.log = clean;
+      saveLog();
+      render();
+      if (!$('suggestions').hidden) renderSuggestions();
+      toast('Imported ' + n + ' tracked games' + (skipped ? ' (' + skipped + ' unknown entries skipped).' : '.'));
+    };
+    reader.readAsText(file);
+  }
+
   // ---------- events ----------
   function bindFilters() {
     var f = state.filters;
@@ -619,6 +846,14 @@
       state.filters = f = Object.assign(defaultFilters(), { sort: f.sort });
       syncFilterInputs();
       render();
+    });
+
+    $('suggest-btn').addEventListener('click', toggleSuggestions);
+    $('export-btn').addEventListener('click', exportLog);
+    $('import-btn').addEventListener('click', function () { $('import-file').click(); });
+    $('import-file').addEventListener('change', function (e) {
+      if (e.target.files && e.target.files[0]) importLog(e.target.files[0]);
+      e.target.value = '';
     });
 
     $('detail').addEventListener('click', function (e) {

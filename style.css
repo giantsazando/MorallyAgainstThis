@@ -355,6 +355,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (max-width: 520px) {
   .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
   .header-inner { flex-direction: column; align-items: flex-start; }
+  .header-actions { justify-content: flex-start; }
+  .header-actions .btn { padding: 6px 11px; }
   .brand h1 { font-size: 1.25rem; }
   .detail-head { padding: 12px 14px 0; }
   .detail-section { padding: 0 14px; }
@@ -396,4 +398,62 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (max-width: 520px) {
   .log-panel { margin: 12px 14px 0; }
   .log-grid { grid-template-columns: 1fr; }
+}
+
+/* ---------- Suggestions ---------- */
+.suggestions {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 14px 16px 16px;
+  margin-bottom: 18px;
+  scroll-margin-top: 12px;
+}
+.suggest-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.suggest-head h2 { margin: 0; font-size: 1.15rem; }
+.suggest-head p { margin: 2px 0 0; }
+.suggest-actions { display: flex; gap: 6px; }
+.suggest-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.suggest-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 0;
+}
+.suggest-cover { border: 0; padding: 0; background: none; cursor: pointer; flex: none; }
+.suggest-cover img { display: block; width: 112px; height: auto; aspect-ratio: 8 / 5; image-rendering: pixelated; border-radius: 4px; }
+.suggest-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.reasons { margin: 2px 0 6px; padding-left: 16px; font-size: .82rem; }
+.reasons li { margin: 0; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--bg);
+  padding: 9px 16px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 10;
+  max-width: calc(100vw - 32px);
+  font-size: .9rem;
+}
+
+@media (max-width: 520px) {
+  .suggest-list { grid-template-columns: 1fr; }
+  .suggest-cover img { width: 88px; }
 }

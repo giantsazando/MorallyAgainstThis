@@ -15,6 +15,10 @@
         <p class="tagline">Enix &amp; Square Enix role-playing games, 1983 to today</p>
       </div>
       <div class="header-actions">
+        <button type="button" id="suggest-btn" class="btn">What next?</button>
+        <button type="button" id="export-btn" class="btn ghost">Export</button>
+        <button type="button" id="import-btn" class="btn ghost">Import</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
         <button type="button" id="theme-toggle" class="btn ghost" aria-label="Toggle colour theme">Theme</button>
       </div>
     </div>
@@ -22,6 +26,10 @@
 
   <main class="wrap">
     <section id="stats" class="stats" aria-label="Your progress"></section>
+
+    <section id="suggestions" class="suggestions" aria-labelledby="suggest-title" hidden></section>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
     <section class="toolbar" aria-label="Filters">
       <div class="tabs" role="tablist" id="status-tabs"></div>
